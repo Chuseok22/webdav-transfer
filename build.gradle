@@ -42,6 +42,9 @@ dependencies {
 
     // swagger
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.3'
+
+    // WebDAV 클라이언트
+    implementation 'com.github.lookfirst:sardine:5.13'
 }
 
 tasks.named('test') {

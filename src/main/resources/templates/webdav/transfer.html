@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>파일 전송</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>파일 전송</h2>
+    <a href="/webdav/explorer" class="btn btn-secondary">탐색기로 돌아가기</a>
+  </div>
+
+  <div class="card">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">전송 설정</h5>
+    </div>
+    <div class="card-body">
+      <form id="transferForm">
+        <div class="mb-3">
+          <label for="cloudPath" class="form-label">클라우드 경로</label>
+          <input type="text" class="form-control" id="cloudPath" th:value="${cloudPath}" readonly>
+        </div>
+
+        <div class="mb-3">
+          <label for="serverPath" class="form-label">서버 경로</label>
+          <input type="text" class="form-control" id="serverPath" th:value="${serverPath}" readonly>
+        </div>
+
+        <div class="mb-3 form-check">
+          <input type="checkbox" class="form-check-input" id="overwrite" checked>
+          <label class="form-check-label" for="overwrite">기존 파일 덮어쓰기</label>
+        </div>
+
+        <button type="button" class="btn btn-primary" onclick="startTransfer()">전송 시작</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card mt-4" id="resultCard" style="display: none;">
+    <div class="card-header bg-info text-white">
+      <h5 class="mb-0">전송 결과</h5>
+    </div>
+    <div class="card-body">
+      <div id="transferResult"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  function startTransfer() {
+    const cloudPath = document.getElementById('cloudPath').value;
+    const serverPath = document.getElementById('serverPath').value;
+    const overwrite = document.getElementById('overwrite').checked;
+
+    // 로딩 표시
+    document.getElementById('transferResult').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div><p class="mt-2">전송 중...</p></div>';
+    document.getElementById('resultCard').style.display = 'block';
+
+    // API 호출
+    fetch(`/api/webdav/transfer?cloudPath=${encodeURIComponent(cloudPath)}&serverPath=${encodeURIComponent(serverPath)}&overwrite=${overwrite}`, {
+      method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if(data === true) {
+        document.getElementById('transferResult').innerHTML =
+            '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>파일 전송이 성공적으로 완료되었습니다.</div>';
+      } else {
+        document.getElementById('transferResult').innerHTML =
+            '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>파일 전송이 실패했습니다. 파일이 이미 존재하거나 권한이 없습니다.</div>';
+      }
+    })
+    .catch(error => {
+      document.getElementById('transferResult').innerHTML =
+          `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>오류가 발생했습니다: ${error.message}</div>`;
+    });
+  }
+</script>
+</body>
+</html>

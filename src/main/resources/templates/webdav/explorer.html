@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>WebDAV 파일 탐색기</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  <style>
+    .file-item {
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .file-item:hover {
+      background-color: #f8f9fa;
+    }
+    .file-item.selected {
+      background-color: #e9ecef;
+    }
+    .file-explorer {
+      height: 70vh;
+      overflow-y: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 5px;
+    }
+    .breadcrumb-item a {
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+<div class="container-fluid mt-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>WebDAV 파일 탐색기</h2>
+    <a href="/webdav" class="btn btn-secondary">메인으로 돌아가기</a>
+  </div>
+
+  <div class="row">
+    <!-- 클라우드 파일 탐색기 -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0">클라우드 파일</h5>
+        </div>
+        <div class="card-body">
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb" id="cloudBreadcrumb">
+              <li class="breadcrumb-item"><a href="#" onclick="navigateCloud('')">루트</a></li>
+              <th:block th:if="${currentCloudPath != ''}">
+                <li class="breadcrumb-item active" th:text="${currentCloudPath}"></li>
+              </th:block>
+            </ol>
+          </nav>
+
+          <div class="file-explorer">
+            <div th:if="${cloudFiles.empty}" class="text-center p-4">
+              <p>파일이 없습니다.</p>
+            </div>
+            <div th:unless="${cloudFiles.empty}">
+              <div th:if="${currentCloudPath != ''}" class="file-item" onclick="navigateParentCloud()">
+                <i class="bi bi-arrow-up-circle me-2"></i>상위 폴더로
+              </div>
+              <div th:each="file : ${cloudFiles}" class="file-item"
+                   th:data-path="${file.filePath}"
+                   th:data-type="${file.directory} ? 'dir' : 'file'"
+                   onclick="handleCloudFileClick(this)">
+                <i th:class="${file.directory} ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2'"></i>
+                <span th:text="${file.fileName}"></span>
+                <span th:if="${!file.directory}" class="text-muted ms-2" th:text="${#numbers.formatDecimal(file.fileSize / 1024, 0, 'COMMA', 2, 'POINT')} + ' KB'"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAS 파일 탐색기 -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-success text-white">
+          <h5 class="mb-0">서버 파일</h5>
+        </div>
+        <div class="card-body">
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb" id="serverBreadcrumb">
+              <li class="breadcrumb-item"><a href="#" onclick="navigateServer('')">루트</a></li>
+              <th:block th:if="${currentServerPath != ''}">
+                <li class="breadcrumb-item active" th:text="${currentServerPath}"></li>
+              </th:block>
+            </ol>
+          </nav>
+
+          <div class="file-explorer">
+            <div th:if="${nasFiles.empty}" class="text-center p-4">
+              <p>파일이 없습니다.</p>
+            </div>
+            <div th:unless="${nasFiles.empty}">
+              <div th:if="${currentServerPath != ''}" class="file-item" onclick="navigateParentServer()">
+                <i class="bi bi-arrow-up-circle me-2"></i>상위 폴더로
+              </div>
+              <div th:each="file : ${nasFiles}" class="file-item"
+                   th:data-path="${file.filePath}"
+                   th:data-type="${file.directory} ? 'dir' : 'file'"
+                   onclick="handleServerFileClick(this)">
+                <i th:class="${file.directory} ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2'"></i>
+                <span th:text="${file.fileName}"></span>
+                <span th:if="${!file.directory}" class="text-muted ms-2" th:text="${#numbers.formatDecimal(file.fileSize / 1024, 0, 'COMMA', 2, 'POINT')} + ' KB'"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전송 패널 -->
+  <div class="card mt-3">
+    <div class="card-header bg-info text-white">
+      <h5 class="mb-0">파일 전송</h5>
+    </div>
+    <div class="card-body">
+      <form id="transferForm" action="/webdav/transfer" method="get">
+        <div class="row">
+          <div class="col-md-5">
+            <div class="mb-3">
+              <label for="selectedCloudPath" class="form-label">선택한 클라우드 파일/폴더</label>
+              <input type="text" class="form-control" id="selectedCloudPath" name="cloudPath" readonly>
+            </div>
+          </div>
+          <div class="col-md-1 d-flex justify-content-center align-items-center">
+            <i class="bi bi-arrow-right fs-3"></i>
+          </div>
+          <div class="col-md-5">
+            <div class="mb-3">
+              <label for="selectedServerPath" class="form-label">대상 서버 폴더</label>
+              <input type="text" class="form-control" id="selectedServerPath" name="serverPath" readonly>
+            </div>
+          </div>
+          <div class="col-md-1 d-flex justify-content-center align-items-center">
+            <button type="submit" class="btn btn-primary" id="transferBtn" disabled>전송</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // 현재 경로 저장
+  let currentCloudPath = "[[${currentCloudPath}]]";
+  let currentServerPath = "[[${currentServerPath}]]";
+  let selectedCloudFile = "";
+  let selectedServerFolder = "";
+
+  // 클라우드 파일 클릭 처리
+  function handleCloudFileClick(element) {
+    const path = element.getAttribute('data-path');
+    const type = element.getAttribute('data-type');
+
+    if (type === 'dir') {
+      navigateCloud(path);
+    } else {
+      selectCloudFile(path);
+    }
+  }
+
+  // 서버 파일 클릭 처리
+  function handleServerFileClick(element) {
+    const path = element.getAttribute('data-path');
+    const type = element.getAttribute('data-type');
+
+    if (type === 'dir') {
+      navigateServer(path);
+    } else {
+      selectServerFile(path);
+    }
+  }
+
+  // 클라우드 폴더 탐색
+  function navigateCloud(path) {
+    window.location.href = `/webdav/explorer?cloudPath=${encodeURIComponent(path)}&serverPath=${encodeURIComponent(currentServerPath)}`;
+  }
+
+  // 서버 폴더 탐색
+  function navigateServer(path) {
+    window.location.href = `/webdav/explorer?cloudPath=${encodeURIComponent(currentCloudPath)}&serverPath=${encodeURIComponent(path)}`;
+  }
+
+  // 클라우드 상위 폴더로 이동
+  function navigateParentCloud() {
+    const lastSlashIndex = currentCloudPath.lastIndexOf('/');
+    const parentPath = lastSlashIndex > 0 ? currentCloudPath.substring(0, lastSlashIndex) : '';
+    navigateCloud(parentPath);
+  }
+
+  // 서버 상위 폴더로 이동
+  function navigateParentServer() {
+    const lastSlashIndex = currentServerPath.lastIndexOf('/');
+    const parentPath = lastSlashIndex > 0 ? currentServerPath.substring(0, lastSlashIndex) : '';
+    navigateServer(parentPath);
+  }
+
+  // 클라우드 파일 선택
+  function selectCloudFile(path) {
+    selectedCloudFile = path;
+    document.getElementById('selectedCloudPath').value = path;
+    updateTransferButton();
+  }
+
+  // 서버 폴더 선택
+  function selectServerFile(path) {
+    selectedServerFolder = path;
+    document.getElementById('selectedServerPath').value = path;
+    updateTransferButton();
+  }
+
+  // 전송 버튼 활성화/비활성화
+  function updateTransferButton() {
+    const transferBtn = document.getElementById('transferBtn');
+    if(selectedCloudFile && (currentServerPath || selectedServerFolder)) {
+      transferBtn.disabled = false;
+
+      // 서버 폴더가 선택되지 않은 경우 현재 경로 사용
+      if(!selectedServerFolder) {
+        document.getElementById('selectedServerPath').value = currentServerPath;
+      }
+    } else {
+      transferBtn.disabled = true;
+    }
+  }
+</script>
+</body>
+</html>
