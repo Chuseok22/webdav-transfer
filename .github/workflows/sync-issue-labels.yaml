@@ -1,5 +1,8 @@
 name: "Sync GitHub Labels"
 
+permissions:
+  issues: write
+
 on:
   push:
     paths:
