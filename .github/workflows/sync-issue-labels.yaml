@@ -3,15 +3,18 @@ name: "Sync GitHub Labels"
 on:
   push:
     paths:
-      - "../labels/issue-label.yml"
+      - .github/labels/issue-label.yml
+      - .github/workflows/sync-issue-labels.yaml
 
 jobs:
   label-sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Sync labels from config
         uses: crazy-max/ghaction-github-labeler@v5
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           yaml-file: .github/ISSUE_TEMPLATE/issue-label.yml
