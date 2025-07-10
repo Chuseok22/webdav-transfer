@@ -5,6 +5,10 @@ on:
     paths:
       - ".github/ISSUE_TEMPLATE/issue-label.yml"
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   label-sync:
     runs-on: ubuntu-latest
