@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>폴더 전송</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>폴더 전송</h2>
+    <a href="/explorer" class="btn btn-secondary">탐색기로 돌아가기</a>
+  </div>
+
+  <div class="card">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">전송 설정</h5>
+    </div>
+    <div class="card-body">
+      <form id="transferForm">
+        <div class="mb-3">
+          <label for="cloudPath" class="form-label">클라우드 폴더 경로</label>
+          <input type="text" class="form-control" id="cloudPath" th:value="${cloudPath}" readonly>
+        </div>
+
+        <div class="mb-3">
+          <label for="serverPath" class="form-label">서버 경로</label>
+          <input type="text" class="form-control" id="serverPath" th:value="${serverPath}" readonly>
+        </div>
+
+        <div class="mb-3 form-check">
+          <input type="checkbox" class="form-check-input" id="overwrite" checked>
+          <label class="form-check-label" for="overwrite">기존 파일 덮어쓰기</label>
+        </div>
+
+        <button type="button" class="btn btn-primary" onclick="startTransfer()">전송 시작</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card mt-4" id="resultCard" style="display: none;">
+    <div class="card-header bg-info text-white">
+      <h5 class="mb-0">전송 결과</h5>
+    </div>
+    <div class="card-body">
+      <div id="transferResult"></div>
+      <div id="progressInfo" class="mt-3">
+        <div class="progress mb-2">
+          <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+        </div>
+        <p id="progressText">준비 중...</p>
+      </div>
+      <div id="failedList" style="display: none;">
+        <h6 class="mt-3">실패한 파일:</h6>
+        <ul id="failedFiles" class="list-group"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  function startTransfer() {
+    const cloudPath = document.getElementById('cloudPath').value;
+    const serverPath = document.getElementById('serverPath').value;
+    const overwrite = document.getElementById('overwrite').checked;
+
+    // 로딩 표시
+    document.getElementById('transferResult').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div><p class="mt-2">폴더 구조 분석 중...</p></div>';
+    document.getElementById('resultCard').style.display = 'block';
+    document.getElementById('progressInfo').style.display = 'block';
+
+    // API 호출 - JSON 형식으로 변경
+    fetch('/api/webdav/transfer/folder', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        folderPath: cloudPath,
+        serverPath: serverPath,
+        overwrite: overwrite
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      const successCount = data.successCount;
+      const totalCount = data.totalCount;
+      const failedFiles = data.failedFiles;
+
+      // 진행률 표시 업데이트
+      const progressPercent = Math.round((successCount / totalCount) * 100);
+      document.getElementById('progressBar').style.width = `${progressPercent}%`;
+      document.getElementById('progressBar').setAttribute('aria-valuenow', progressPercent);
+      document.getElementById('progressText').textContent = `${successCount}/${totalCount} 파일 전송 완료 (${progressPercent}%)`;
+
+      let resultHtml = '';
+
+      if (successCount === totalCount) {
+        resultHtml = `<div class="alert alert-success">
+                       <i class="bi bi-check-circle me-2"></i>
+                       폴더 내 모든 파일(${totalCount}개)이 성공적으로 전송되었습니다.
+                     </div>`;
+        document.getElementById('progressBar').classList.remove('progress-bar-animated');
+        document.getElementById('progressBar').classList.add('bg-success');
+      } else {
+        resultHtml = `<div class="alert alert-warning">
+                       <i class="bi bi-exclamation-triangle me-2"></i>
+                       폴더 내 ${successCount}/${totalCount} 파일이 전송되었습니다.
+                     </div>`;
+        document.getElementById('progressBar').classList.remove('progress-bar-animated');
+
+        // 실패한 파일 목록 표시
+        const failedListElem = document.getElementById('failedList');
+        const failedFilesElem = document.getElementById('failedFiles');
+
+        failedListElem.style.display = 'block';
+        failedFilesElem.innerHTML = '';
+
+        failedFiles.forEach(file => {
+          const li = document.createElement('li');
+          li.className = 'list-group-item text-danger';
+          li.textContent = file;
+          failedFilesElem.appendChild(li);
+        });
+      }
+
+      document.getElementById('transferResult').innerHTML = resultHtml;
+    })
+    .catch(error => {
+      document.getElementById('transferResult').innerHTML =
+          `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>오류가 발생했습니다: ${error.message}</div>`;
+      document.getElementById('progressInfo').style.display = 'none';
+    });
+  }
+</script>
+</body>
+</html>
