@@ -6,7 +6,7 @@ import lombok.Getter;
 @Getter
 public class MultipleFileTransferDTO {
 
-  private List<String> filePaths;
+  private List<String> cloudPaths;
   private String serverPath;
   private boolean overwrite;
 
