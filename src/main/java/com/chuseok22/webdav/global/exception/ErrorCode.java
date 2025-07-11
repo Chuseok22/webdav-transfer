@@ -30,9 +30,13 @@ public enum ErrorCode {
 
   FILE_TRANSFER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "파일 전송에 실패했습니다."),
 
+  DIRECTORY_CREATE_ERROR(HttpStatus.UNAUTHORIZED, "NAS 폴더 생성 시 오류가 발생했습니다."),
+
   // URL
 
   URL_FORMAT_ERROR(HttpStatus.BAD_REQUEST, "URL 형식이 잘못되었습니다."),
+
+  URL_ENCODE_ERROR(HttpStatus.BAD_REQUEST, "URL 인코딩 시 오류가 발생했습니다"),
   ;
 
   private final HttpStatus status;
