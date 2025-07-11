@@ -64,13 +64,19 @@ public class WebDavClient {
     Sardine cloudClient = createClient(cloudUsername, cloudPassword);
     Sardine nasClient = createClient(nasUsername, nasPassword);
 
-    String normalizePath = FileUtil.normalizePath(filePath);
-    String normalizeDir = FileUtil.normalizePath(targetDir);
-    String cloudFileUrl = FileUtil.buildUrl(cloudUrl, normalizePath);
-    String nasFileUrl = FileUtil.buildUrl(nasUrl, normalizeDir);
-    String fileName = normalizePath.substring(normalizePath.lastIndexOf('/') + 1);
+    log.info("filePath: {}, targetDir: {}", filePath, targetDir);
 
-    String dstUrl = nasFileUrl.endsWith("/") ? nasFileUrl + fileName : nasFileUrl + "/" + fileName;
+    String cloudFullUrl = FileUtil.combineBaseAndPath(cloudUrl, filePath);
+    String nasDirFullUrl = FileUtil.combineBaseAndPath(nasUrl, targetDir);
+    log.info("단일 파일 전송 요청: {} -> {}", cloudFullUrl, nasDirFullUrl);
+
+    String cloudFileUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, filePath);
+    String nasFileUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, targetDir);
+    String fileName = cloudFileUrl.substring(cloudFileUrl.lastIndexOf('/') + 1);
+    log.info("전송 파일명: {}", fileName);
+
+    String dstUrl = FileUtil.combineBaseAndPath(nasDirFullUrl, fileName);
+    log.info("NAS 파일 위치: {}", dstUrl);
 
     try {
       if (nasClient.exists(dstUrl) && !overwrite) {
@@ -84,7 +90,7 @@ public class WebDavClient {
       log.info("전송 성공: {}", fileName);
       return true;
     } catch (IOException e) {
-      log.error("전송 실패 [{} → {}]: {}", normalizePath, normalizeDir, e.getMessage());
+      log.error("전송 실패 [{} → {}]: {}", cloudFullUrl, nasDirFullUrl, e.getMessage());
       e.printStackTrace();
       throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
     }
@@ -111,8 +117,8 @@ public class WebDavClient {
         try {
           String normalizePath = FileUtil.normalizePath(filePath);
           String normalizeDir = FileUtil.normalizePath(targetDir);
-          String cloudFileUrl = FileUtil.buildUrl(cloudUrl, normalizePath);
-          String nasFileUrl = FileUtil.buildUrl(nasUrl, normalizeDir);
+          String cloudFileUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, normalizePath);
+          String nasFileUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, normalizeDir);
           String fileName = normalizePath.substring(normalizePath.lastIndexOf('/') + 1);
 
           String dstUrl = nasFileUrl.endsWith("/") ? nasFileUrl + fileName : nasFileUrl + "/" + fileName;
@@ -172,7 +178,7 @@ public class WebDavClient {
     // 대상 폴더 경로 생성
     String targetFolderPath = normalizedTarget + "/" + folderName; // NAS에 폴더 경로 생성
     log.info("NAS에 생성할 폴더 경로: {}", targetFolderPath);
-    String targetFolderUrl = FileUtil.buildUrl(nasUrl, targetFolderPath); // 최종 NAS
+    String targetFolderUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, targetFolderPath); // 최종 NAS
     log.info("최종 NAS URL: {}", targetFolderUrl);
 
     List<String> failedFiles = new ArrayList<>();
@@ -200,7 +206,7 @@ public class WebDavClient {
       for (FolderItemDTO item : allItems) {
         if (item.isDirectory()) {
           String newDirPath = targetFolderPath + "/" + item.getRelativePath();
-          String newDirUrl = FileUtil.buildUrl(nasUrl, newDirPath);
+          String newDirUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, newDirPath);
           if (!nasClient.exists(newDirUrl)) {
             nasClient.createDirectory(newDirUrl);
           }
@@ -211,9 +217,9 @@ public class WebDavClient {
       for (FolderItemDTO item : allItems) {
         if (!item.isDirectory()) {
           try {
-            String srcUrl = FileUtil.buildUrl(cloudUrl, item.getFullPath());
+            String srcUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, item.getFullPath());
             String dstPath = targetFolderPath + "/" + item.getRelativePath();
-            String dstUrl = FileUtil.buildUrl(nasUrl, dstPath);
+            String dstUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, dstPath);
 
             if (nasClient.exists(dstUrl) && !overwrite) {
               log.warn("파일 이미 존재(overwrite=false): {}", dstUrl);
@@ -251,7 +257,7 @@ public class WebDavClient {
    */
   private List<FolderItemDTO> listFolderContentsRecursively(Sardine client, String folderPath, String relativePath) {
     List<FolderItemDTO> result = new ArrayList<>();
-    String fullUrl = FileUtil.buildUrl(cloudUrl, folderPath);
+    String fullUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, folderPath);
     log.info("폴더 재귀적 조회: 클라우드 URL: {}", fullUrl);
     log.info("folderPath: {}", folderPath);
 
@@ -265,7 +271,7 @@ public class WebDavClient {
     }
     for (DavResource resource : resources) {
       // 현재 폴더 자체는 건너 뜀
-      if (FileUtil.buildUrl(cloudUrl, resource.getHref().toString()).equals(fullUrl)) {
+      if (FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, resource.getHref().toString()).equals(fullUrl)) {
         log.info("현재 폴더 자체는 건너뜁니다. 현재 폴더: {}, 요청 URL: {}", resource.getHref().toString(), fullUrl);
         continue;
       }
@@ -328,12 +334,12 @@ public class WebDavClient {
   private List<WebDavFileDTO> listFiles(String username, String password, String baseUrl, String rawPath) {
     Sardine client = createClient(username, password);
     try {
-      String path = FileUtil.normalizePath(rawPath);
-      String url = FileUtil.buildUrl(baseUrl, path);
-      log.info("목록 조회 URL: {}", url);
-      return client.list(url).stream()
-          .filter(r -> !r.getHref().toString().equals(url))
-          .map(r -> toDto(r, path))
+      log.info("목록 조회 요청 URL: {}", FileUtil.combineBaseAndPath(baseUrl, rawPath));
+      String fullEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(baseUrl, rawPath);
+
+      return client.list(fullEncodedUrl).stream()
+          .filter(r -> !r.getHref().toString().equals(fullEncodedUrl))
+          .map(r -> toDto(r, FileUtil.normalizePath(rawPath)))
           .collect(Collectors.toList());
     } catch (IOException e) {
       log.error("목록 조회 실패 [{}]: {}", rawPath, e.getMessage());
@@ -356,15 +362,15 @@ public class WebDavClient {
     }
   }
 
-  private WebDavFileDTO toDto(DavResource r, String parentPath) {
-    String name = r.getName();
-    String path = parentPath + (parentPath.endsWith("/") ? "" : "/") + name;
+  private WebDavFileDTO toDto(DavResource resource, String parentPath) {
+    String fileName = resource.getName();
+    String path = FileUtil.combineBaseAndPath(parentPath, fileName);
     return WebDavFileDTO.builder()
-        .fileName(name)
+        .fileName(fileName)
         .filePath(path)
-        .fileSize(r.getContentLength())
-        .isDirectory(r.isDirectory())
-        .lastModified(r.getModified() != null ? DATE_FORMAT.format(r.getModified()) : "")
+        .fileSize(resource.getContentLength())
+        .isDirectory(resource.isDirectory())
+        .lastModified(resource.getModified() != null ? DATE_FORMAT.format(resource.getModified()) : "")
         .build();
   }
 }
