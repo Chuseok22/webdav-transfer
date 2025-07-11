@@ -37,6 +37,8 @@ public enum ErrorCode {
   URL_FORMAT_ERROR(HttpStatus.BAD_REQUEST, "URL 형식이 잘못되었습니다."),
 
   URL_ENCODE_ERROR(HttpStatus.BAD_REQUEST, "URL 인코딩 시 오류가 발생했습니다"),
+
+  BASE_URL_MUST_NOT_BE_NULL_OR_EMPTY(HttpStatus.BAD_REQUEST, "BaseURL에 빈 값 or null이 입력되었습니다."),
   ;
 
   private final HttpStatus status;
