@@ -1,7 +1,8 @@
 package com.chuseok22.webdav.controller.view;
 
-import com.chuseok22.webdav.dto.WebDavFileDTO;
+import com.chuseok22.webdav.dto.response.WebDavFileDTO;
 import com.chuseok22.webdav.service.FileTransferService;
+import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
-@RequestMapping("/webdav")
+@RequestMapping("/")
 @RequiredArgsConstructor
 public class WebDavViewController {
 
@@ -39,7 +40,7 @@ public class WebDavViewController {
     return "webdav/explorer";
   }
 
-  @GetMapping("/transfer")
+  @GetMapping("/transfer/single")
   public String transferPage(
       @RequestParam(value = "cloudPath", required = false) String cloudPath,
       @RequestParam(value = "serverPath", required = false, defaultValue = "") String serverPath,
@@ -49,5 +50,31 @@ public class WebDavViewController {
     model.addAttribute("serverPath", serverPath);
 
     return "webdav/transfer";
+  }
+
+  @GetMapping("/transfer/multiple")
+  public String multipleTransferPage(
+      @RequestParam("cloudPaths") String cloudPathsParam,
+      @RequestParam("serverPath") String serverPath,
+      Model model) {
+
+    List<String> cloudPaths = Arrays.asList(cloudPathsParam.split(","));
+    model.addAttribute("cloudPaths", cloudPaths);
+    model.addAttribute("serverPath", serverPath);
+    model.addAttribute("fileCount", cloudPaths.size());
+
+    return "webdav/multiple-transfer";
+  }
+
+  @GetMapping("/transfer/folder")
+  public String folderTransferPage(
+      @RequestParam("cloudPath") String cloudPath,
+      @RequestParam("serverPath") String serverPath,
+      Model model) {
+
+    model.addAttribute("cloudPath", cloudPath);
+    model.addAttribute("serverPath", serverPath);
+
+    return "webdav/folder-transfer";
   }
 }

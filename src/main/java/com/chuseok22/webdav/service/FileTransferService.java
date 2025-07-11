@@ -1,7 +1,11 @@
 package com.chuseok22.webdav.service;
 
 import com.chuseok22.webdav.client.WebDavClient;
-import com.chuseok22.webdav.dto.WebDavFileDTO;
+import com.chuseok22.webdav.dto.request.FolderTransferDTO;
+import com.chuseok22.webdav.dto.request.MultipleFileTransferDTO;
+import com.chuseok22.webdav.dto.request.SingleFileTransferDTO;
+import com.chuseok22.webdav.dto.response.TransferResultDTO;
+import com.chuseok22.webdav.dto.response.WebDavFileDTO;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,13 +31,23 @@ public class FileTransferService {
   }
 
   /**
-   * 선택한 파일들을 클라우드에서 서버로 전송
-   */
-
-  /**
    * 단일 파일 전송
    */
-  public boolean transferSingleFile(String cloudPath, String serverPath, boolean overwrite) {
-    return webDavClient.transferFile(cloudPath, serverPath, overwrite);
+  public boolean transferSingleFile(SingleFileTransferDTO request) {
+    return webDavClient.transferFile(request.getFilePath(), request.getServerPath(), request.isOverwrite());
+  }
+
+  /**
+   * 다중 파일 전송
+   */
+  public TransferResultDTO transferMultipleFiles(MultipleFileTransferDTO request) {
+    return webDavClient.transferMultipleFiles(request.getFilePaths(), request.getServerPath(), request.isOverwrite());
+  }
+
+  /**
+   * 폴더 전송
+   */
+  public TransferResultDTO transferFolder(FolderTransferDTO request) {
+    return webDavClient.transferFolder(request.getFolderPath(), request.getServerPath(), request.isOverwrite());
   }
 }

@@ -1,4 +1,4 @@
-package com.chuseok22.webdav.dto;
+package com.chuseok22.webdav.dto.response;
 
 import lombok.Builder;
 import lombok.Getter;

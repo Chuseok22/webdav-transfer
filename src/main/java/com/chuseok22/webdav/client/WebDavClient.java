@@ -1,6 +1,8 @@
 package com.chuseok22.webdav.client;
 
-import com.chuseok22.webdav.dto.WebDavFileDTO;
+import com.chuseok22.webdav.dto.response.FolderItemDTO;
+import com.chuseok22.webdav.dto.response.TransferResultDTO;
+import com.chuseok22.webdav.dto.response.WebDavFileDTO;
 import com.chuseok22.webdav.global.exception.CustomException;
 import com.chuseok22.webdav.global.exception.ErrorCode;
 import com.chuseok22.webdav.global.util.FileUtil;
@@ -10,6 +12,7 @@ import com.github.sardine.SardineFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -85,6 +88,212 @@ public class WebDavClient {
       e.printStackTrace();
       throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
     }
+  }
+
+  /**
+   * 다중 파일 전송 (클라우드 -> NAS)
+   *
+   * @param filePaths 전송할 파일 경로 목록
+   * @param targetDir 대상 디렉토리
+   * @param overwrite 덮어쓰기 여부
+   * @return 성공한 파일 수와 전체 파일 수를 포함한 결과 객체
+   */
+  public TransferResultDTO transferMultipleFiles(List<String> filePaths, String targetDir, boolean overwrite) {
+    Sardine cloudClient = createClient(cloudUsername, cloudPassword);
+    Sardine nasClient = createClient(nasUsername, nasPassword);
+
+    int totalFiles = filePaths.size();
+    int successCount = 0;
+    List<String> failedFiles = new ArrayList<>();
+
+    try {
+      for (String filePath : filePaths) {
+        try {
+          String normalizePath = FileUtil.normalizePath(filePath);
+          String normalizeDir = FileUtil.normalizePath(targetDir);
+          String cloudFileUrl = FileUtil.buildUrl(cloudUrl, normalizePath);
+          String nasFileUrl = FileUtil.buildUrl(nasUrl, normalizeDir);
+          String fileName = normalizePath.substring(normalizePath.lastIndexOf('/') + 1);
+
+          String dstUrl = nasFileUrl.endsWith("/") ? nasFileUrl + fileName : nasFileUrl + "/" + fileName;
+
+          if (nasClient.exists(dstUrl) && !overwrite) {
+            log.warn("파일 이미 존재(overwrite = false): {}", dstUrl);
+            failedFiles.add(filePath);
+            continue;
+          }
+
+          try (InputStream inputstream = cloudClient.get(cloudFileUrl)) {
+            nasClient.put(dstUrl, inputstream);
+            successCount++;
+            log.info("파일 전송 성공: {}", fileName);
+          }
+        } catch (IOException e) {
+          log.error("파일 전송 실패 [{}]: {}", filePath, e.getMessage());
+          e.printStackTrace();
+          failedFiles.add(filePath);
+        }
+      }
+      return TransferResultDTO.builder()
+          .successCount(successCount)
+          .totalCount(totalFiles)
+          .failedFiles(failedFiles)
+          .build();
+    } finally {
+      shutdownClient(cloudClient);
+      shutdownClient(nasClient);
+    }
+  }
+
+  /**
+   * 폴더 전송 (클라우드 -> NAS)
+   *
+   * @param folderPath 전송할 폴더 경로
+   * @param targetDir  대상 디렉토리
+   * @param overwrite  덮어쓰기 여부
+   * @return 전송 결과 객체
+   */
+  public TransferResultDTO transferFolder(String folderPath, String targetDir, boolean overwrite) {
+    Sardine cloudClient = createClient(cloudUsername, cloudPassword);
+    Sardine nasClient = createClient(nasUsername, nasPassword);
+    log.info("폴더 전송을 시작합니다");
+    log.info("클라우드 폴더 경로: {}", folderPath);
+    log.info("NAS 대상 경로: {}", targetDir);
+
+    String normalizedFolder = FileUtil.normalizePath(folderPath); // Cloud 폴더 경로 정규화
+    log.info("Cloud 폴더 경로 정규화: {}", normalizedFolder);
+    String normalizedTarget = FileUtil.normalizePath(targetDir); // NAS 타켓 경로 정규화
+    log.info("NAS 대상 경로 정규화: {}", normalizedTarget);
+
+    // 폴더명 추출
+    String folderName = normalizedFolder.substring(normalizedFolder.lastIndexOf('/') + 1);
+    log.info("폴더명 추출: {}", folderName);
+
+    // 대상 폴더 경로 생성
+    String targetFolderPath = normalizedTarget + "/" + folderName; // NAS에 폴더 경로 생성
+    log.info("NAS에 생성할 폴더 경로: {}", targetFolderPath);
+    String targetFolderUrl = FileUtil.buildUrl(nasUrl, targetFolderPath); // 최종 NAS
+    log.info("최종 NAS URL: {}", targetFolderUrl);
+
+    List<String> failedFiles = new ArrayList<>();
+    int totalFiles = 0;
+    int successCount = 0;
+    try {
+      try {
+        // 대상 폴더 생성
+        if (!nasClient.exists(targetFolderUrl)) {
+          log.debug("NAS에 대상 폴더가 존재하지 않아 폴더를 생성합니다: NAS경로: {}, 생성할 폴더: {}", targetDir, targetFolderUrl);
+          nasClient.createDirectory(targetFolderUrl);
+          log.info("NAS에 폴더 생성 성공: 생성된 폴더 경로: {}", targetFolderUrl);
+        }
+      } catch (Exception e) {
+        log.error("폴더 생성 시 오류가 발생했습니다: {}, 오류: {}", targetFolderUrl, e.getMessage());
+        throw new CustomException(ErrorCode.DIRECTORY_CREATE_ERROR);
+      }
+
+      // 모든 파일과 하위 폴더 조회 (재귀)
+      log.info("모든 파일, 하위 폴더 조회 시작");
+      List<FolderItemDTO> allItems = listFolderContentsRecursively(cloudClient, normalizedFolder, "");
+      totalFiles = (int) allItems.stream().filter(item -> !item.isDirectory()).count();
+
+      // 폴더 구조 생성
+      for (FolderItemDTO item : allItems) {
+        if (item.isDirectory()) {
+          String newDirPath = targetFolderPath + "/" + item.getRelativePath();
+          String newDirUrl = FileUtil.buildUrl(nasUrl, newDirPath);
+          if (!nasClient.exists(newDirUrl)) {
+            nasClient.createDirectory(newDirUrl);
+          }
+        }
+      }
+
+      // 파일 전송
+      for (FolderItemDTO item : allItems) {
+        if (!item.isDirectory()) {
+          try {
+            String srcUrl = FileUtil.buildUrl(cloudUrl, item.getFullPath());
+            String dstPath = targetFolderPath + "/" + item.getRelativePath();
+            String dstUrl = FileUtil.buildUrl(nasUrl, dstPath);
+
+            if (nasClient.exists(dstUrl) && !overwrite) {
+              log.warn("파일 이미 존재(overwrite=false): {}", dstUrl);
+              failedFiles.add(item.getFullPath());
+              continue;
+            }
+
+            try (InputStream in = cloudClient.get(srcUrl)) {
+              nasClient.put(dstUrl, in);
+              successCount++;
+              log.info("전송 성공: {}", item.getRelativePath());
+            }
+          } catch (IOException e) {
+            log.error("파일 전송 실패 [{}]: {}", item.getFullPath(), e.getMessage());
+            failedFiles.add(item.getFullPath());
+          }
+        }
+      }
+      return TransferResultDTO.builder()
+          .successCount(successCount)
+          .totalCount(totalFiles)
+          .failedFiles(failedFiles)
+          .build();
+    } catch (IOException e) {
+      log.error("폴더 전송 실패 [{}]: {}", folderPath, e.getMessage());
+      throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
+    } finally {
+      shutdownClient(cloudClient);
+      shutdownClient(nasClient);
+    }
+  }
+
+  /**
+   * 폴더 내용을 재귀적으로 조회
+   */
+  private List<FolderItemDTO> listFolderContentsRecursively(Sardine client, String folderPath, String relativePath) {
+    List<FolderItemDTO> result = new ArrayList<>();
+    String fullUrl = FileUtil.buildUrl(cloudUrl, folderPath);
+    log.info("폴더 재귀적 조회: 클라우드 URL: {}", fullUrl);
+    log.info("folderPath: {}", folderPath);
+
+    List<DavResource> resources;
+    try {
+      log.info("폴더 내용 조회 시도: {}", fullUrl);
+      resources = client.list(fullUrl);
+    } catch (IOException e) {
+      log.error("DavResource 추출에 실패했습니다. 요청URL: {}", fullUrl);
+      throw new CustomException(ErrorCode.DIRECTORY_READ_ERROR);
+    }
+    for (DavResource resource : resources) {
+      // 현재 폴더 자체는 건너 뜀
+      if (FileUtil.buildUrl(cloudUrl, resource.getHref().toString()).equals(fullUrl)) {
+        log.info("현재 폴더 자체는 건너뜁니다. 현재 폴더: {}, 요청 URL: {}", resource.getHref().toString(), fullUrl);
+        continue;
+      }
+
+      String name = resource.getName();
+      String newRelativePath = relativePath.isEmpty() ? name : relativePath + "/" + name;
+      String fullPath = folderPath + "/" + name;
+
+      FolderItemDTO folderItemDTO = FolderItemDTO.builder()
+          .fileName(name)
+          .relativePath(newRelativePath)
+          .fullPath(fullPath)
+          .isDirectory(resource.isDirectory())
+          .build();
+      result.add(folderItemDTO);
+
+      // 디렉토리면 재귀 호출
+      if (resource.isDirectory()) {
+        log.info("하위 폴더 조회를 진행합니다");
+        try {
+          result.addAll(listFolderContentsRecursively(client, fullPath, newRelativePath));
+        } catch (Exception e) {
+          log.error("하위 폴더 조회 실패: {}, 원인: {}", fullPath, e.getMessage());
+          throw new CustomException(ErrorCode.DIRECTORY_READ_ERROR);
+        }
+      }
+    }
+    return result;
   }
 
   /**

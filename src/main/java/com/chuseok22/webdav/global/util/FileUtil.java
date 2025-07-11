@@ -3,14 +3,16 @@ package com.chuseok22.webdav.global.util;
 import com.chuseok22.webdav.global.exception.CustomException;
 import com.chuseok22.webdav.global.exception.ErrorCode;
 import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.net.URLEncoder;
+import java.util.Arrays;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.experimental.UtilityClass;
+import lombok.extern.slf4j.Slf4j;
 
 @UtilityClass
+@Slf4j
 public class FileUtil {
 
   /**
@@ -53,31 +55,67 @@ public class FileUtil {
    */
   public static String buildUrl(String baseUrl, String normalizedPath) {
     Objects.requireNonNull(baseUrl, "Base URL must not be null");
-    String base = removeTrailingSlash(baseUrl);
-    String full = base + Optional.ofNullable(normalizedPath).orElse("");
-    try {
-      URL url = new URL(full);
-      StringBuilder sb = new StringBuilder();
-      String protocol = url.getProtocol();
-      String host = url.getHost();
-      int port = url.getPort();
-      sb.append(protocol).append("://").append(host);
-      if (port != -1) {
-        sb.append(':').append(port);
-      }
-      for (String segment : url.getPath().split("/")) {
-        if (segment.isEmpty()) {
-          continue;
-        }
-        sb.append('/').append(URLEncoder.encode(segment, "UTF-8").replace("+", "%20"));
-      }
-      if (url.getQuery() != null) {
-        sb.append('?').append(url.getQuery());
-      }
-      return sb.toString();
-    } catch (MalformedURLException | UnsupportedEncodingException e) {
-      throw new CustomException(ErrorCode.URL_FORMAT_ERROR);
+
+    if (normalizedPath == null || normalizedPath.isEmpty()) {
+      return removeTrailingSlash(baseUrl);
     }
+
+    try {
+      // 기본 URL 끝의 슬래시 제거
+      String base = removeTrailingSlash(baseUrl);
+
+      // 경로를 개별 구성요소로 분리
+      String[] pathParts = normalizedPath.split("/");
+      StringBuilder encodedPath = new StringBuilder();
+
+      // 로그 추가
+      log.info("요청 경로 분해: {}", Arrays.toString(pathParts));
+
+      for (String part : pathParts) {
+        if (!part.isEmpty()) {
+          String encodedPart;
+
+          // RFC 3986 호환 인코딩 (URLEncoder는 폼 인코딩 방식을 사용함)
+          encodedPart = URLEncoder.encode(part, "UTF-8")
+              .replace("+", "%20")
+              .replace("%2F", "/")
+              .replace("%7E", "~");
+
+          // 이미 완전히 인코딩된 부분은 다시 인코딩하지 않음
+          if (part.matches(".*%[0-9A-Fa-f]{2}.*")) {
+            System.out.println("이미 인코딩된 경로 부분 발견: " + part);
+            // %로 시작하는 시퀀스가 유효한 URL 인코딩인지 확인
+            if (isValidUrlEncoded(part)) {
+              encodedPart = part;
+            }
+          }
+
+          encodedPath.append("/").append(encodedPart);
+          System.out.println("부분 경로 추가: " + encodedPart);
+        }
+      }
+
+      String result = base + encodedPath.toString();
+      log.info("최종 URL: {}", result);
+      return result;
+
+    } catch (UnsupportedEncodingException e) {
+      log.error("FilUtil URL 인코딩중 오류 발생: {}", e.getMessage());
+      throw new CustomException(ErrorCode.URL_ENCODE_ERROR);
+    }
+  }
+
+  /**
+   * 문자열이 유효한 URL 인코딩 형식인지 확인
+   */
+  private static boolean isValidUrlEncoded(String s) {
+    // %XX 형식의 패턴이 있는지 확인
+    Matcher m = Pattern.compile("%[0-9A-Fa-f]{2}").matcher(s);
+    while (m.find()) {
+      // 유효한 인코딩 패턴
+      return true;
+    }
+    return false;
   }
 
   /**
