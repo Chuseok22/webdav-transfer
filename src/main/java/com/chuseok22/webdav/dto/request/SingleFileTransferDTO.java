@@ -4,7 +4,7 @@ import lombok.Getter;
 
 @Getter
 public class SingleFileTransferDTO {
-  private String filePath;
+  private String cloudPath;
   private String serverPath;
   boolean overwrite;
 

@@ -34,14 +34,14 @@ public class FileTransferService {
    * 단일 파일 전송
    */
   public boolean transferSingleFile(SingleFileTransferDTO request) {
-    return webDavClient.transferFile(request.getFilePath(), request.getServerPath(), request.isOverwrite());
+    return webDavClient.transferFile(request.getCloudPath(), request.getServerPath(), request.isOverwrite());
   }
 
   /**
    * 다중 파일 전송
    */
   public TransferResultDTO transferMultipleFiles(MultipleFileTransferDTO request) {
-    return webDavClient.transferMultipleFiles(request.getFilePaths(), request.getServerPath(), request.isOverwrite());
+    return webDavClient.transferMultipleFiles(request.getCloudPaths(), request.getServerPath(), request.isOverwrite());
   }
 
   /**
