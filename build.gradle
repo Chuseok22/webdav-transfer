@@ -45,6 +45,8 @@ dependencies {
 
     // WebDAV 클라이언트
     implementation 'com.github.lookfirst:sardine:5.13'
+
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
 }
 
 tasks.named('test') {
