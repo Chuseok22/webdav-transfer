@@ -132,7 +132,7 @@ public class WebDavClient {
           try (InputStream inputstream = cloudClient.get(cloudFileUrl)) {
             nasClient.put(dstUrl, inputstream);
             successCount++;
-            log.info("파일 전송 성공: {}", fileName);
+            log.info("파일 전송 성공({}/{}): {}", totalFiles, successCount, fileName);
           }
         } catch (IOException e) {
           log.error("파일 전송 실패 [{}]: {}", filePath, e.getMessage());
