@@ -75,7 +75,7 @@
                 <i th:class="${file.directory} ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2'"></i>
                 <span th:text="${file.fileName}"></span>
                 <span th:if="${!file.directory}" class="text-muted ms-2"
-                      th:text="${#numbers.formatDecimal(file.fileSize / 1024, 0, 'COMMA', 2, 'POINT')} + ' KB'"></span>
+                      th:text="${#numbers.formatDecimal(file.fileSize / 1024, 0, 'COMMA', 2, 'POINT')} + ' MB'"></span>
               </div>
             </div>
           </div>
@@ -126,7 +126,7 @@
                 <i th:class="${file.directory} ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2'"></i>
                 <span th:text="${file.fileName}"></span>
                 <span th:if="${!file.directory}" class="text-muted ms-2"
-                      th:text="${#numbers.formatDecimal(file.fileSize / 1024, 0, 'COMMA', 2, 'POINT')} + ' KB'"></span>
+                      th:text="${#numbers.formatDecimal(file.fileSize / 1024, 0, 'COMMA', 2, 'POINT')} + ' MB'"></span>
               </div>
             </div>
           </div>
