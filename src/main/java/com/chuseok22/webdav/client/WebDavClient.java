@@ -62,39 +62,7 @@ public class WebDavClient {
    * @param overwrite 덮어쓰기 여부
    */
   public boolean transferFile(String filePath, String targetDir, boolean overwrite) {
-    Sardine cloudClient = createClient(cloudUsername, cloudPassword);
-    Sardine nasClient = createClient(nasUsername, nasPassword);
-
-    log.info("filePath: {}, targetDir: {}", filePath, targetDir);
-
-    String cloudFullUrl = FileUtil.combineBaseAndPath(cloudUrl, filePath);
-    String nasDirFullUrl = FileUtil.combineBaseAndPath(nasUrl, targetDir);
-    log.info("단일 파일 전송 요청: {} -> {}", cloudFullUrl, nasDirFullUrl);
-
-    String cloudFileUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, filePath);
-    String nasFileUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, targetDir);
-    String fileName = cloudFileUrl.substring(cloudFileUrl.lastIndexOf('/') + 1);
-    log.info("전송 파일명: {}", fileName);
-
-    String dstUrl = FileUtil.combineBaseAndPath(nasDirFullUrl, fileName);
-    log.info("NAS 파일 위치: {}", dstUrl);
-
-    try {
-      if (nasClient.exists(dstUrl) && !overwrite) {
-        log.error("파일 이미 존재(overwrite=false): {}", dstUrl);
-        return false;
-      }
-      log.info("전송 시작: {} → {}", cloudFileUrl, dstUrl);
-      try (InputStream in = cloudClient.get(cloudFileUrl)) {
-        nasClient.put(dstUrl, in);
-      }
-      log.info("전송 성공: {}", fileName);
-      return true;
-    } catch (IOException e) {
-      log.error("전송 실패 [{} → {}]: {}", cloudFullUrl, nasDirFullUrl, e.getMessage());
-      e.printStackTrace();
-      throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
-    }
+    return processFileTransfer(filePath, targetDir, overwrite);
   }
 
   /**
@@ -106,50 +74,23 @@ public class WebDavClient {
    * @return 성공한 파일 수와 전체 파일 수를 포함한 결과 객체
    */
   public TransferResultDTO transferMultipleFiles(List<String> filePaths, String targetDir, boolean overwrite) {
-    Sardine cloudClient = createClient(cloudUsername, cloudPassword);
-    Sardine nasClient = createClient(nasUsername, nasPassword);
-
     int totalFiles = filePaths.size();
     int successCount = 0;
     List<String> failedFiles = new ArrayList<>();
 
-    try {
-      for (String filePath : filePaths) {
-        try {
-          String normalizePath = FileUtil.normalizePath(filePath);
-          String normalizeDir = FileUtil.normalizePath(targetDir);
-          String cloudFileUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, normalizePath);
-          String nasFileUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, normalizeDir);
-          String fileName = normalizePath.substring(normalizePath.lastIndexOf('/') + 1);
-
-          String dstUrl = nasFileUrl.endsWith("/") ? nasFileUrl + fileName : nasFileUrl + "/" + fileName;
-
-          if (nasClient.exists(dstUrl) && !overwrite) {
-            log.warn("파일 이미 존재(overwrite = false): {}", dstUrl);
-            failedFiles.add(filePath);
-            continue;
-          }
-
-          try (InputStream inputstream = cloudClient.get(cloudFileUrl)) {
-            nasClient.put(dstUrl, inputstream);
-            successCount++;
-            log.info("파일 전송 성공({}/{}): {}", successCount, totalFiles, fileName);
-          }
-        } catch (IOException e) {
-          log.error("파일 전송 실패 [{}]: {}", filePath, e.getMessage());
-          e.printStackTrace();
-          failedFiles.add(filePath);
-        }
+    for (String filePath : filePaths) {
+      boolean isSucceed = processFileTransfer(filePath, targetDir, overwrite);
+      if (isSucceed) {
+        successCount++;
+      } else {
+        failedFiles.add(filePath);
       }
-      return TransferResultDTO.builder()
-          .successCount(successCount)
-          .totalCount(totalFiles)
-          .failedFiles(failedFiles)
-          .build();
-    } finally {
-      shutdownClient(cloudClient);
-      shutdownClient(nasClient);
     }
+    return TransferResultDTO.builder()
+        .successCount(successCount)
+        .totalCount(totalFiles)
+        .failedFiles(failedFiles)
+        .build();
   }
 
   /**
@@ -254,6 +195,50 @@ public class WebDavClient {
   }
 
   /**
+   * 파일 전송 로직 (클라우드 -> NAS)
+   *
+   * @param filePath  전송할 파일 경로 (ex. /home/무제.txt)
+   * @param targetDir 대상 디렉토리 (ex. /home/folder)
+   * @param overwrite 덮어쓰기 여부
+   */
+  public boolean processFileTransfer(String filePath, String targetDir, boolean overwrite) {
+    Sardine cloudClient = createClient(cloudUsername, cloudPassword);
+    Sardine nasClient = createClient(nasUsername, nasPassword);
+
+    String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
+    log.info("전송 요청된 파일명: {}", fileName);
+
+    String cloudFilePathFullUrl = FileUtil.combineBaseAndPath(cloudUrl, filePath);
+    String nasDirFullUrl = FileUtil.combineBaseAndPath(nasUrl, targetDir);
+    log.info("파일 전송 요청: 파일명: {}, [{}] -> [{}]", fileName, cloudFilePathFullUrl, nasDirFullUrl);
+
+    String cloudFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, filePath);
+    log.info("인코딩된 클라우드 파일 경로: {}", cloudFilePathEncodedUrl);
+    String nasFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(nasDirFullUrl, fileName);
+    log.info("인코딩된 NAS 파일 경로: {}", nasFilePathEncodedUrl);
+
+    try {
+      if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
+        log.warn("파일: {} 이 이미 존재합니다 (overwrite = false) 건너뜁니다", fileName);
+        return false;
+      }
+      log.info("전송 시작: {} -> {}", cloudFilePathFullUrl, nasDirFullUrl);
+      try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
+        log.info("CloudClient 전송 성공: {}", cloudFilePathEncodedUrl);
+        nasClient.put(nasFilePathEncodedUrl, inputStream);
+      }
+      log.info("파일 전송 성공: {}", FileUtil.combineBaseAndPath(nasDirFullUrl, fileName));
+      return true;
+    } catch (IOException e) {
+      log.error("전송 실패 [{} → {}]", cloudFilePathFullUrl, nasDirFullUrl, e);
+      throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
+    } finally {
+      shutdownClient(cloudClient);
+      shutdownClient(nasClient);
+    }
+  }
+
+  /**
    * 폴더 내용을 재귀적으로 조회
    */
   private List<FolderItemDTO> listFolderContentsRecursively(Sardine client, String folderPath, String relativePath) {
@@ -339,13 +324,12 @@ public class WebDavClient {
       String fullEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(baseUrl, rawPath);
 
       return client.list(fullEncodedUrl).stream()
-          .filter(r -> !FileUtil.normalizePath(r.getHref().toString()).equals(rawPath))
+          .filter(r -> !FileUtil.normalizePath(r.getHref().toString()).equals(FileUtil.encodePathSegments(rawPath)))
           .sorted(Comparator.comparing(DavResource::getName))
           .map(r -> toDto(r, FileUtil.normalizePath(rawPath)))
           .collect(Collectors.toList());
     } catch (IOException e) {
-      log.error("목록 조회 실패 [{}]: {}", rawPath, e.getMessage());
-      e.printStackTrace();
+      log.error("목록 조회 실패 [{}]", rawPath, e);
       throw new CustomException(ErrorCode.DIRECTORY_READ_ERROR);
     } finally {
       shutdownClient(client);
