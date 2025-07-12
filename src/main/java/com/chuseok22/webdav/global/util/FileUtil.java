@@ -2,7 +2,6 @@ package com.chuseok22.webdav.global.util;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 public class FileUtil {
 
   // URL 인코딩 패턴 (예: %20, %E1 등)
-  private static final Pattern ENCODED_PATTERN = Pattern.compile("%[0-9A-Fa-f]{2}");
+  private static final Pattern ENCODED_SEGMENT_PATTERN = Pattern.compile("^(?:%[0-9A-Fa-f]{2})+$");
 
   /**
    * 1. rawPath 정규화 및 인코딩
@@ -108,8 +107,7 @@ public class FileUtil {
    * 문자열이 유효한 URL 인코딩 형식인지 확인
    */
   private static boolean isValidUrlEncoded(String s) {
-    Matcher m = ENCODED_PATTERN.matcher(s);
-    return m.find();
+    return ENCODED_SEGMENT_PATTERN.matcher(s).matches();
   }
 
   /**
