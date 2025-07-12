@@ -370,7 +370,7 @@ public class WebDavClient {
     return WebDavFileDTO.builder()
         .fileName(fileName)
         .filePath(path)
-        .fileSize(resource.getContentLength() / 1000)
+        .fileSize(resource.getContentLength() / 1024)
         .isDirectory(resource.isDirectory())
         .lastModified(resource.getModified() != null ? DATE_FORMAT.format(resource.getModified()) : "")
         .build();
