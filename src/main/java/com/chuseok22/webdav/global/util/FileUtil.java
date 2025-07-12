@@ -2,6 +2,7 @@ package com.chuseok22.webdav.global.util;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
@@ -14,8 +15,9 @@ public class FileUtil {
   private static final Pattern ENCODED_SEGMENT_PATTERN = Pattern.compile("^(?:%[0-9A-Fa-f]{2})+$");
 
   /**
-   * 1. rawPath 정규화 및 인코딩
-   * 2. baseUrl과 결합하여 하나의 url로 반환
+   * 1. rawPath 정규화
+   * 2. baseUrl과 결합
+   * 3. Spring UriComponentsBuilder.encode()로 UTF-8 percent-encoding 수행
    *
    * @param baseUrl 기본 URL
    * @param rawPath 사용자 입력 Path
@@ -23,8 +25,8 @@ public class FileUtil {
    */
   public String buildNormalizedAndEncodedUrl(String baseUrl, String rawPath) {
     String normalizedPath = normalizePath(rawPath);
-    String encodedAndNormalizedPath = encodeUTF8(normalizedPath);
-    return combineBaseAndPath(baseUrl, encodedAndNormalizedPath);
+    String encodedPath = encodePathSegments(normalizedPath);
+    return combineBaseAndPath(baseUrl, encodedPath);
   }
 
   /**
@@ -76,38 +78,50 @@ public class FileUtil {
   }
 
   /**
-   * 입력 문자열을 UTF-8로 인코딩
+   * UTF-8 인코딩
    *
-   * @param s 경로
-   * @return 인코딩된 문자열
+   * @param input 문자열
+   * @return 인코딩 된 문자열
    */
-  public static String encodeUTF8(String s) {
-    if (s == null || s.isEmpty()) {
+  private static String encodeString(String input) {
+    if (input == null || input.isEmpty()) {
+      return "";
+    }
+    return URLEncoder
+        .encode(input, StandardCharsets.UTF_8)
+        .replace("+", "%20");
+  }
+
+  /**
+   * 경로 세그먼트 중 인코딩되지 않은 부분만 인코딩
+   *
+   * @param path 경로
+   * @return 인코딩되지 않은 부분만 인코딩 후 반환
+   */
+  public static String encodePathSegments(String path) {
+    if (path == null || path.isEmpty()) {
       return "";
     }
     StringBuilder sb = new StringBuilder();
-    String[] segments = s.split("/");
+    String[] segments = path.split("/");
     for (String segment : segments) {
       if (segment.isEmpty()) {
         continue;
       }
-      // 이미 인코딩된 부분은 재인코딩하지 않음
-      if (isValidUrlEncoded(segment)) {
-        sb.append("/").append(segment);
-      } else {
-        String part = URLEncoder.encode(segment, StandardCharsets.UTF_8)
-            .replace("+", "%20");
-        sb.append("/").append(part);
-      }
+      sb.append("/");
+      sb.append(isEncoded(segment)
+          ? segment
+          : encodeString(segment));
     }
     return sb.toString();
   }
 
   /**
-   * 문자열이 유효한 URL 인코딩 형식인지 확인
+   * 이미 percent-encoding된 문자열인지 검증
    */
-  private static boolean isValidUrlEncoded(String s) {
-    return ENCODED_SEGMENT_PATTERN.matcher(s).matches();
+  public static boolean isEncoded(String input) {
+    Matcher matcher = ENCODED_SEGMENT_PATTERN.matcher(input);
+    return matcher.find();
   }
 
   /**
