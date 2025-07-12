@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -132,7 +133,7 @@ public class WebDavClient {
           try (InputStream inputstream = cloudClient.get(cloudFileUrl)) {
             nasClient.put(dstUrl, inputstream);
             successCount++;
-            log.info("파일 전송 성공({}/{}): {}", totalFiles, successCount, fileName);
+            log.info("파일 전송 성공({}/{}): {}", successCount, totalFiles, fileName);
           }
         } catch (IOException e) {
           log.error("파일 전송 실패 [{}]: {}", filePath, e.getMessage());
@@ -338,7 +339,8 @@ public class WebDavClient {
       String fullEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(baseUrl, rawPath);
 
       return client.list(fullEncodedUrl).stream()
-          .filter(r -> !r.getHref().toString().equals(fullEncodedUrl))
+          .filter(r -> !FileUtil.normalizePath(r.getHref().toString()).equals(rawPath))
+          .sorted(Comparator.comparing(DavResource::getName))
           .map(r -> toDto(r, FileUtil.normalizePath(rawPath)))
           .collect(Collectors.toList());
     } catch (IOException e) {
@@ -368,7 +370,7 @@ public class WebDavClient {
     return WebDavFileDTO.builder()
         .fileName(fileName)
         .filePath(path)
-        .fileSize(resource.getContentLength())
+        .fileSize(resource.getContentLength() / 1000)
         .isDirectory(resource.isDirectory())
         .lastModified(resource.getModified() != null ? DATE_FORMAT.format(resource.getModified()) : "")
         .build();
