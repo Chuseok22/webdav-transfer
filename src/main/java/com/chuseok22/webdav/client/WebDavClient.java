@@ -82,6 +82,7 @@ public class WebDavClient {
       boolean isSucceed = processFileTransfer(filePath, targetDir, overwrite);
       if (isSucceed) {
         successCount++;
+        log.info("파일 전송 성공: {}/{}", successCount, totalFiles);
       } else {
         failedFiles.add(filePath);
       }
