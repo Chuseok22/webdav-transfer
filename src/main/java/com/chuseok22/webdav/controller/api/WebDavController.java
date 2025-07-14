@@ -8,6 +8,7 @@ import com.chuseok22.webdav.dto.response.WebDavFileDTO;
 import com.chuseok22.webdav.global.aop.log.LogMonitoringInvocation;
 import com.chuseok22.webdav.service.FileTransferService;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -51,7 +52,7 @@ public class WebDavController {
 
   @LogMonitoringInvocation
   @PostMapping("/transfer/folder")
-  public ResponseEntity<TransferResultDTO> transferFolder(@RequestBody FolderTransferDTO request) {
+  public ResponseEntity<TransferResultDTO> transferFolder(@RequestBody FolderTransferDTO request) throws IOException {
     return ResponseEntity.ok(fileTransferService.transferFolder(request));
   }
 }
