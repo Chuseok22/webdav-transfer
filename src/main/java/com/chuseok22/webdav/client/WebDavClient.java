@@ -181,6 +181,26 @@ public class WebDavClient {
     if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
       log.warn("파일: {} 이 이미 존재합니다 (overwrite = false) 건너뜁니다", fileName);
       return TransferResult.DUPLICATE;
+    } else {
+      // 덮어쓰기 활성화 상태면 파일 크기 비교
+      List<DavResource> cloudResources = cloudClient.list(cloudFilePathEncodedUrl);
+      List<DavResource> nasResources = nasClient.list(nasFilePathEncodedUrl);
+
+      if (!cloudResources.isEmpty() && !nasResources.isEmpty()) {
+        DavResource cloudResource = cloudResources.getFirst();
+        DavResource nasResource = nasResources.getFirst();
+
+        // 파일 크기가 같으면 전송 패스
+        if (cloudResource.getContentLength().equals(nasResource.getContentLength())) {
+          log.info("파일: {} 크기가 동일합니다 ({}MB). 전송을 건너뜁니다", fileName, cloudResource.getContentLength() / (1024 * 1024));
+          return TransferResult.DUPLICATE;
+        }
+
+        log.info("파일: {} 크기가 다릅니다 (클라우드: {}KB, NAS: {}KB). 덮어쓰기를 진행합니다",
+            fileName,
+            cloudResource.getContentLength() / (1024 * 1024),
+            nasResource.getContentLength() / (1024 * 1024));
+      }
     }
     log.info("전송 시작: {} -> {}", filePath, targetDir);
     try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
