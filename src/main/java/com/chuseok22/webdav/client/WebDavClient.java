@@ -79,14 +79,21 @@ public class WebDavClient {
     List<String> failedFiles = new ArrayList<>();
 
     for (String filePath : filePaths) {
-      boolean isSucceed = processFileTransfer(filePath, targetDir, overwrite);
-      if (isSucceed) {
-        successCount++;
-        log.info("파일 전송 성공: {}/{}, 건너뛴 파일: {}", successCount, totalFiles, failedFiles.size());
-      } else {
+      try {
+        boolean isSucceed = processFileTransfer(filePath, targetDir, overwrite);
+        if (isSucceed) {
+          successCount++;
+          log.info("파일 전송 성공: {}/{}, 건너뛴 파일: {}", successCount, totalFiles, failedFiles.size());
+        } else {
+          failedFiles.add(filePath);
+        }
+      } catch (Exception e) {
+        log.error("다중 파일 전송 중 오류 발생", e);
+        log.error("파일을 건너뜁니다: {}", filePath);
         failedFiles.add(filePath);
       }
     }
+    log.error("실패 or 건너뛴 파일: {}개, [{}]", failedFiles.size(), failedFiles);
     return TransferResultDTO.builder()
         .successCount(successCount)
         .totalCount(totalFiles)
