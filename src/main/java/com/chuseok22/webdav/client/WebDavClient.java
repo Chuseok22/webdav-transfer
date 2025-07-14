@@ -106,8 +106,8 @@ public class WebDavClient {
     log.info("==================================================");
     log.info("총 파일: {}", totalFiles);
     log.info("성공한 파일: {}", successCount);
-    log.warn("중복된 파일: {}", duplicatedFiles.size());
-    log.error("실패한 파일: {}, [{}]", failedFiles.size(), failedFiles);
+    log.info("중복된 파일: {}", duplicatedFiles.size());
+    log.info("실패한 파일: {}, [{}]", failedFiles.size(), failedFiles);
     log.info("==================================================");
     return TransferResultDTO.builder()
         .successCount(successCount)
