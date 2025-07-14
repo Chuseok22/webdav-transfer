@@ -82,7 +82,7 @@ public class WebDavClient {
       boolean isSucceed = processFileTransfer(filePath, targetDir, overwrite);
       if (isSucceed) {
         successCount++;
-        log.info("파일 전송 성공: {}/{}", successCount, totalFiles);
+        log.info("파일 전송 성공: {}/{}, 건너뛴 파일: {}", successCount, totalFiles, failedFiles.size());
       } else {
         failedFiles.add(filePath);
       }
@@ -104,95 +104,38 @@ public class WebDavClient {
    */
   public TransferResultDTO transferFolder(String folderPath, String targetDir, boolean overwrite) {
     Sardine cloudClient = createClient(cloudUsername, cloudPassword);
-    Sardine nasClient = createClient(nasUsername, nasPassword);
-    log.info("폴더 전송을 시작합니다");
-    log.info("클라우드 폴더 경로: {}", folderPath);
-    log.info("NAS 대상 경로: {}", targetDir);
-
-    String normalizedFolder = FileUtil.normalizePath(folderPath); // Cloud 폴더 경로 정규화
-    log.info("Cloud 폴더 경로 정규화: {}", normalizedFolder);
-    String normalizedTarget = FileUtil.normalizePath(targetDir); // NAS 타켓 경로 정규화
-    log.info("NAS 대상 경로 정규화: {}", normalizedTarget);
-
-    // 폴더명 추출
-    String folderName = normalizedFolder.substring(normalizedFolder.lastIndexOf('/') + 1);
-    log.info("폴더명 추출: {}", folderName);
-
-    // 대상 폴더 경로 생성
-    String targetFolderPath = normalizedTarget + "/" + folderName; // NAS에 폴더 경로 생성
-    log.info("NAS에 생성할 폴더 경로: {}", targetFolderPath);
-    String targetFolderUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, targetFolderPath); // 최종 NAS
-    log.info("최종 NAS URL: {}", targetFolderUrl);
 
     List<String> failedFiles = new ArrayList<>();
-    int totalFiles = 0;
+    int totalFiles;
     int successCount = 0;
-    try {
-      try {
-        // 대상 폴더 생성
-        if (!nasClient.exists(targetFolderUrl)) {
-          log.debug("NAS에 대상 폴더가 존재하지 않아 폴더를 생성합니다: NAS경로: {}, 생성할 폴더: {}", targetDir, targetFolderUrl);
-          nasClient.createDirectory(targetFolderUrl);
-          log.info("NAS에 폴더 생성 성공: 생성된 폴더 경로: {}", targetFolderUrl);
-        }
-      } catch (Exception e) {
-        log.error("폴더 생성 시 오류가 발생했습니다: {}, 오류: {}", targetFolderUrl, e.getMessage());
-        throw new CustomException(ErrorCode.DIRECTORY_CREATE_ERROR);
-      }
+    createFolderIfNotExists(folderPath, targetDir);
 
-      // 모든 파일과 하위 폴더 조회 (재귀)
-      log.info("모든 파일, 하위 폴더 조회 시작");
-      List<FolderItemDTO> allItems = listFolderContentsRecursively(cloudClient, normalizedFolder, "");
-      totalFiles = (int) allItems.stream().filter(item -> !item.isDirectory()).count();
+    // 모든 파일과 하위 폴더 조회 (재귀)
+    log.info("모든 파일, 하위 폴더 조회 시작");
+    List<FolderItemDTO> folderItemDTOS = listFolderContentsRecursively(cloudClient, folderPath, "");
+    totalFiles = (int) folderItemDTOS.stream().filter(item -> !item.isDirectory()).count();
+    log.info("총 파일 개수: {}", totalFiles);
 
-      // 폴더 구조 생성
-      for (FolderItemDTO item : allItems) {
-        if (item.isDirectory()) {
-          String newDirPath = targetFolderPath + "/" + item.getRelativePath();
-          String newDirUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, newDirPath);
-          if (!nasClient.exists(newDirUrl)) {
-            nasClient.createDirectory(newDirUrl);
-          }
+    // 폴더 구조 생성
+    for (FolderItemDTO dto : folderItemDTOS) {
+      if (dto.isDirectory()) {
+        log.info("하위 폴더를 생성합니다: {}", dto.getRelativePath());
+        createFolderIfNotExists(dto.getFullPath(), FileUtil.combineBaseAndPath(targetDir, dto.getRelativePath()));
+      } else {
+        boolean isSucceed = processFileTransfer(dto.getFullPath(), FileUtil.combineBaseAndPath(targetDir, dto.getRelativePath()), overwrite);
+        if (isSucceed) {
+          successCount++;
+          log.info("파일 전송 성공: {}/{}, 건너뛴 파일: {}", successCount, totalFiles, failedFiles.size());
+        } else {
+          failedFiles.add(dto.getFileName());
         }
       }
-
-      // 파일 전송
-      for (FolderItemDTO item : allItems) {
-        if (!item.isDirectory()) {
-          try {
-            String srcUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, item.getFullPath());
-            String dstPath = targetFolderPath + "/" + item.getRelativePath();
-            String dstUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, dstPath);
-
-            if (nasClient.exists(dstUrl) && !overwrite) {
-              log.warn("파일 이미 존재(overwrite=false): {}", dstUrl);
-              failedFiles.add(item.getFullPath());
-              continue;
-            }
-
-            try (InputStream in = cloudClient.get(srcUrl)) {
-              nasClient.put(dstUrl, in);
-              successCount++;
-              log.info("전송 성공: {}", item.getRelativePath());
-            }
-          } catch (IOException e) {
-            log.error("파일 전송 실패 [{}]: {}", item.getFullPath(), e.getMessage());
-            failedFiles.add(item.getFullPath());
-          }
-        }
-      }
-      return TransferResultDTO.builder()
-          .successCount(successCount)
-          .totalCount(totalFiles)
-          .failedFiles(failedFiles)
-          .build();
-    } catch (IOException e) {
-      log.error("폴더 전송 실패 [{}]: {}", folderPath, e.getMessage());
-      throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
-    } finally {
-      shutdownClient(cloudClient);
-      shutdownClient(nasClient);
     }
+    return TransferResultDTO.builder()
+        .successCount(successCount)
+        .totalCount(totalFiles)
+        .failedFiles(failedFiles)
+        .build();
   }
 
   /**
@@ -207,16 +150,12 @@ public class WebDavClient {
     Sardine nasClient = createClient(nasUsername, nasPassword);
 
     String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
-    log.info("전송 요청된 파일명: {}", fileName);
-
     String cloudFilePathFullUrl = FileUtil.combineBaseAndPath(cloudUrl, filePath);
     String nasDirFullUrl = FileUtil.combineBaseAndPath(nasUrl, targetDir);
     log.info("파일 전송 요청: 파일명: {}, [{}] -> [{}]", fileName, cloudFilePathFullUrl, nasDirFullUrl);
 
     String cloudFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, filePath);
-    log.info("인코딩된 클라우드 파일 경로: {}", cloudFilePathEncodedUrl);
     String nasFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(nasDirFullUrl, fileName);
-    log.info("인코딩된 NAS 파일 경로: {}", nasFilePathEncodedUrl);
 
     try {
       if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
@@ -225,7 +164,6 @@ public class WebDavClient {
       }
       log.info("전송 시작: {} -> {}", cloudFilePathFullUrl, nasDirFullUrl);
       try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
-        log.info("CloudClient 전송 성공: {}", cloudFilePathEncodedUrl);
         nasClient.put(nasFilePathEncodedUrl, inputStream);
       }
       log.info("파일 전송 성공: {}", FileUtil.combineBaseAndPath(nasDirFullUrl, fileName));
@@ -240,35 +178,73 @@ public class WebDavClient {
   }
 
   /**
+   * 폴더 생성
+   *
+   * @param folderPath 폴더 경로 (폴더명 추출을 위한 경로)
+   * @param targetDir  NAS 경로 (폴더를 생성할 NAS 경로)
+   * @return 성공시 true, 실패시 false
+   */
+  public boolean createFolderIfNotExists(String folderPath, String targetDir) {
+    Sardine nasClient = createClient(nasUsername, nasPassword);
+
+    String normalizedFolder = FileUtil.normalizePath(folderPath); // 폴더 경로 정규화
+    String normalizedTarget = FileUtil.normalizePath(targetDir); // NAS 타켓 경로 정규화
+
+    // 폴더명 추출
+    String folderName = normalizedFolder.substring(normalizedFolder.lastIndexOf('/') + 1);
+    log.info("폴더명 추출: {}", folderName);
+
+    // 대상 폴더 경로 생성
+    String targetFolderPath = FileUtil.combineBaseAndPath(normalizedTarget, folderName); // NAS에 폴더 경로 생성
+    String targetFolderEncodedFullUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, targetFolderPath); // NAS 폴더경로 Full URL
+
+    try {
+      // 대상 폴더 생성
+      if (!nasClient.exists(targetFolderEncodedFullUrl)) {
+        log.info("NAS에 대상 폴더가 존재하지 않아 폴더를 생성합니다: NAS경로: {}, 생성할 폴더: {}", targetDir, targetFolderEncodedFullUrl);
+        nasClient.createDirectory(targetFolderEncodedFullUrl);
+        log.info("NAS에 폴더 생성 성공: 생성된 폴더 경로: {}", targetFolderEncodedFullUrl);
+        return true;
+      } else {
+        log.warn("이미 NAS에 대상 폴더가 존재하므로 건너뜁니다: {}", folderName);
+        return false;
+      }
+    } catch (IOException e) {
+      log.error("폴더 생성 중 오류가 발생했습니다: {}", FileUtil.combineBaseAndPath(nasUrl, targetFolderPath), e);
+      throw new CustomException(ErrorCode.DIRECTORY_CREATE_ERROR);
+    }
+  }
+
+  /**
    * 폴더 내용을 재귀적으로 조회
    */
   private List<FolderItemDTO> listFolderContentsRecursively(Sardine client, String folderPath, String relativePath) {
     List<FolderItemDTO> result = new ArrayList<>();
-    String fullUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, folderPath);
-    log.info("폴더 재귀적 조회: 클라우드 URL: {}", fullUrl);
-    log.info("folderPath: {}", folderPath);
+
+    String normalizedFolderPath = FileUtil.normalizePath(folderPath);
+    log.info("재귀적 조회 대상 폴더: {}", normalizedFolderPath);
+    String cloudEncodedFullUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, normalizedFolderPath);
 
     List<DavResource> resources;
     try {
-      log.info("폴더 내용 조회 시도: {}", fullUrl);
-      resources = client.list(fullUrl);
+      resources = client.list(cloudEncodedFullUrl);
     } catch (IOException e) {
-      log.error("DavResource 추출에 실패했습니다. 요청URL: {}", fullUrl);
+      log.error("DavResource 추출에 실패했습니다. 요청URL: {}", cloudEncodedFullUrl);
       throw new CustomException(ErrorCode.DIRECTORY_READ_ERROR);
     }
     for (DavResource resource : resources) {
       // 현재 폴더 자체는 건너 뜀
-      if (FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, resource.getHref().toString()).equals(fullUrl)) {
-        log.info("현재 폴더 자체는 건너뜁니다. 현재 폴더: {}, 요청 URL: {}", resource.getHref().toString(), fullUrl);
+      if (FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, FileUtil.normalizePath(resource.getHref().toString())).equalsIgnoreCase(cloudEncodedFullUrl)) {
+        log.info("현재 폴더는 건너뜁니다: {}", normalizedFolderPath);
         continue;
       }
 
-      String name = resource.getName();
-      String newRelativePath = relativePath.isEmpty() ? name : relativePath + "/" + name;
-      String fullPath = folderPath + "/" + name;
+      String fileName = resource.getName();
+      String newRelativePath = relativePath.isEmpty() ? fileName : FileUtil.combineBaseAndPath(relativePath, fileName);
+      String fullPath = FileUtil.combineBaseAndPath(normalizedFolderPath, fileName);
 
       FolderItemDTO folderItemDTO = FolderItemDTO.builder()
-          .fileName(name)
+          .fileName(fileName)
           .relativePath(newRelativePath)
           .fullPath(fullPath)
           .isDirectory(resource.isDirectory())
@@ -322,10 +298,11 @@ public class WebDavClient {
     Sardine client = createClient(username, password);
     try {
       log.info("목록 조회 요청 URL: {}", FileUtil.combineBaseAndPath(baseUrl, rawPath));
-      String fullEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(baseUrl, rawPath);
+      String normalizedPath = FileUtil.normalizePath(rawPath);
+      String fullEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(baseUrl, normalizedPath);
 
       return client.list(fullEncodedUrl).stream()
-          .filter(r -> !FileUtil.normalizePath(r.getHref().toString()).equals(FileUtil.encodePathSegments(rawPath)))
+          .filter(r -> !FileUtil.buildNormalizedAndEncodedUrl(baseUrl, FileUtil.normalizePath(r.getHref().toString())).equalsIgnoreCase(fullEncodedUrl))
           .sorted(Comparator.comparing(DavResource::getName))
           .map(r -> toDto(r, FileUtil.normalizePath(rawPath)))
           .collect(Collectors.toList());

@@ -11,8 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class FileUtil {
 
-  // URL 인코딩 패턴 (예: %20, %E1 등)
-  private static final Pattern ENCODED_SEGMENT_PATTERN = Pattern.compile("^(?:%[0-9A-Fa-f]{2})+$");
+  private static final Pattern PERCENT_ENCODED = Pattern.compile("(%[0-9A-Fa-f]{2})");
+
 
   /**
    * 1. rawPath 정규화
@@ -109,19 +109,31 @@ public class FileUtil {
         continue;
       }
       sb.append("/");
-      sb.append(isEncoded(segment)
-          ? segment
-          : encodeString(segment));
+      sb.append(encodeSegmentPreservingPercents(segment));
     }
     return sb.toString();
   }
 
-  /**
-   * 이미 percent-encoding된 문자열인지 검증
-   */
-  public static boolean isEncoded(String input) {
-    Matcher matcher = ENCODED_SEGMENT_PATTERN.matcher(input);
-    return matcher.find();
+  private static String encodeSegmentPreservingPercents(String segment) {
+    Matcher m = PERCENT_ENCODED.matcher(segment);
+    int last = 0;
+    StringBuilder out = new StringBuilder();
+    while (m.find()) {
+      // 1) [last..m.start()) 구간은 인코딩
+      String literal = segment.substring(last, m.start());
+      if (!literal.isEmpty()) {
+        out.append(encodeString(literal));
+      }
+      // 2) %XX 부분은 그대로 append
+      out.append(m.group(1));
+      last = m.end();
+    }
+    // 3) 남은 tail 구간 인코딩
+    String tail = segment.substring(last);
+    if (!tail.isEmpty()) {
+      out.append(encodeString(tail));
+    }
+    return out.toString();
   }
 
   /**
