@@ -209,11 +209,12 @@
     selectAllFiles();
   });
 
-  // 파일 전체 선택 함수 (폴더 제외)
+  // 파일 전체 선택 함수 (클라우드 파일만 선택, 폴더 제외)
   function selectAllFiles() {
     clearSelection();
 
-    const fileItems = document.querySelectorAll('.file-item[data-type="file"]');
+    // 클라우드 파일 탐색기 내의 파일만 선택 (NAS 파일 제외)
+    const fileItems = document.querySelectorAll('.col-md-6:first-of-type .file-item[data-type="file"]');
     fileItems.forEach(item => {
       const path = item.getAttribute('data-path');
       const name = item.getAttribute('data-name');
@@ -431,6 +432,12 @@
       const folders = selectedFiles.filter(f => f.isFolder);
       const files = selectedFiles.filter(f => !f.isFolder);
 
+      if (folders.length > 0 && files.length > 0) {
+        alert('폴더와 파일은 동시에 전송할 수 없습니다. 폴더만 또는 파일만 선택해주세요.');
+        return;
+      }
+
+      // 서버 경로 설정
       document.getElementById('serverPathInput').value = serverPath;
 
       // 다중 파일 전송
