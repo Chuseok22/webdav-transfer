@@ -150,26 +150,25 @@ public class WebDavClient {
     Sardine nasClient = createClient(nasUsername, nasPassword);
 
     String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
-    String cloudFilePathFullUrl = FileUtil.combineBaseAndPath(cloudUrl, filePath);
-    String nasDirFullUrl = FileUtil.combineBaseAndPath(nasUrl, targetDir);
-    log.info("파일 전송 요청: 파일명: {}, [{}] -> [{}]", fileName, cloudFilePathFullUrl, nasDirFullUrl);
+    String normalizeTargetDir = FileUtil.normalizePath(targetDir);
+    String nasFilePath = FileUtil.combineBaseAndPath(normalizeTargetDir, fileName);
 
     String cloudFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, filePath);
-    String nasFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(nasDirFullUrl, fileName);
+    String nasFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, nasFilePath);
 
     try {
       if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
         log.warn("파일: {} 이 이미 존재합니다 (overwrite = false) 건너뜁니다", fileName);
         return false;
       }
-      log.info("전송 시작: {} -> {}", cloudFilePathFullUrl, nasDirFullUrl);
+      log.info("전송 시작: {} -> {}", filePath, targetDir);
       try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
         nasClient.put(nasFilePathEncodedUrl, inputStream);
       }
-      log.info("파일 전송 성공: {}", FileUtil.combineBaseAndPath(nasDirFullUrl, fileName));
+      log.info("파일 전송 성공: {}", nasFilePath);
       return true;
     } catch (IOException e) {
-      log.error("전송 실패 [{} → {}]", cloudFilePathFullUrl, nasDirFullUrl, e);
+      log.error("전송 실패 [{} → {}]", filePath, nasFilePath, e);
       throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
     } finally {
       shutdownClient(cloudClient);
