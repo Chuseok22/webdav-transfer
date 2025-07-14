@@ -11,21 +11,26 @@
       padding: 8px;
       border-radius: 4px;
     }
+
     .file-item:hover {
       background-color: #f8f9fa;
     }
+
     .file-item.selected {
       background-color: #e9ecef;
     }
+
     .file-explorer {
       height: 70vh;
       overflow-y: auto;
       border: 1px solid #dee2e6;
       border-radius: 5px;
     }
+
     .breadcrumb-item a {
       text-decoration: none;
     }
+
     .badge-pill {
       border-radius: 50rem;
     }
@@ -38,15 +43,25 @@
     <a href="/" class="btn btn-secondary">메인으로 돌아가기</a>
   </div>
 
+  <!-- 숨겨진 전송 폼 -->
+  <form id="transferForm" method="POST" style="display:none;">
+    <input type="hidden" id="cloudPathsInput" name="cloudPaths">
+    <input type="hidden" id="cloudPathInput" name="cloudPath">
+    <input type="hidden" id="serverPathInput" name="serverPath">
+  </form>
+
   <div class="row">
     <!-- 클라우드 파일 탐색기 -->
     <div class="col-md-6">
       <div class="card">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
           <h5 class="mb-0">클라우드 파일</h5>
-          <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="enableMultiSelect">
-            <label class="form-check-label text-white" for="enableMultiSelect">다중 선택 모드</label>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-light" id="selectAllFiles" style="display: none;">파일 전체 선택</button>
+            <div class="form-check form-switch ms-2">
+              <input class="form-check-input" type="checkbox" id="enableMultiSelect">
+              <label class="form-check-label text-white" for="enableMultiSelect">다중 선택 모드</label>
+            </div>
           </div>
         </div>
         <div class="card-body">
@@ -71,7 +86,7 @@
                    th:data-path="${file.filePath}"
                    th:data-name="${file.fileName}"
                    th:data-type="${file.directory} ? 'dir' : 'file'"
-                   onclick="handleCloudFileClick(this)">
+                   onclick="handleCloudFileClick(this, event)">
                 <i th:class="${file.directory} ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2'"></i>
                 <span th:text="${file.fileName}"></span>
                 <span th:if="${!file.directory}" class="text-muted ms-2"
@@ -176,32 +191,85 @@
   // 다중 선택 모드 변수
   let isMultiSelectMode = false;
   let selectedFiles = [];
+  let lastSelectedIndex = -1;  // Shift 키 선택을 위한 마지막 선택 인덱스
 
   // 다중 선택 모드 전환
-  document.getElementById('enableMultiSelect').addEventListener('change', function() {
+  document.getElementById('enableMultiSelect').addEventListener('change', function () {
     isMultiSelectMode = this.checked;
     document.getElementById('selectedFilesContainer').style.display = isMultiSelectMode ? 'block' : 'none';
+    document.getElementById('selectAllFiles').style.display = isMultiSelectMode ? 'inline-block' : 'none';
+
     if (!isMultiSelectMode) {
       clearSelection();
     }
   });
 
-  // 클라우드 파일 클릭 처리
-  function handleCloudFileClick(element) {
+  // 전체 선택 버튼 클릭 이벤트
+  document.getElementById('selectAllFiles').addEventListener('click', function () {
+    selectAllFiles();
+  });
+
+  // 파일 전체 선택 함수 (폴더 제외)
+  function selectAllFiles() {
+    clearSelection();
+
+    const fileItems = document.querySelectorAll('.file-item[data-type="file"]');
+    fileItems.forEach(item => {
+      const path = item.getAttribute('data-path');
+      const name = item.getAttribute('data-name');
+
+      toggleFileSelection(path, name, false);
+      item.classList.add('selected');
+    });
+  }
+
+  // 클라우드 파일 클릭 처리 함수 수정
+  function handleCloudFileClick(element, event) {
     const path = element.getAttribute('data-path');
     const type = element.getAttribute('data-type');
     const name = element.getAttribute('data-name');
 
     if (isMultiSelectMode) {
-      // 다중 선택 모드에서 처리
-      toggleFileSelection(path, name, type === 'dir');
+      // 현재 항목의 인덱스 구하기
+      const items = Array.from(document.querySelectorAll('.file-item'));
+      const currentIndex = items.indexOf(element);
 
-      // 선택된 요소 스타일링
-      if (element.classList.contains('selected')) {
-        element.classList.remove('selected');
-      } else {
+      // Shift 키가 눌린 상태에서 클릭한 경우 범위 선택
+      if (event.shiftKey && lastSelectedIndex >= 0) {
+        const start = Math.min(lastSelectedIndex, currentIndex);
+        const end = Math.max(lastSelectedIndex, currentIndex);
+
+        for (let i = start; i <= end; i++) {
+          const item = items[i];
+          const itemPath = item.getAttribute('data-path');
+          const itemName = item.getAttribute('data-name');
+          const isFolder = item.getAttribute('data-type') === 'dir';
+
+          // 이미 선택된 상태가 아니면 선택
+          if (!item.classList.contains('selected')) {
+            toggleFileSelection(itemPath, itemName, isFolder);
+            item.classList.add('selected');
+          }
+        }
+      }
+      // Ctrl/Cmd 키가 눌린 상태가 아니면 이전 선택 초기화
+      else if (!event.ctrlKey && !event.metaKey) {
+        clearSelection();
+        toggleFileSelection(path, name, type === 'dir');
         element.classList.add('selected');
       }
+      // 일반 다중 선택
+      else {
+        toggleFileSelection(path, name, type === 'dir');
+
+        if (element.classList.contains('selected')) {
+          element.classList.remove('selected');
+        } else {
+          element.classList.add('selected');
+        }
+      }
+
+      lastSelectedIndex = currentIndex;
     } else {
       // 일반 모드에서 처리
       if (type === 'dir') {
@@ -266,7 +334,7 @@
       const removeBtn = document.createElement('button');
       removeBtn.className = 'btn btn-sm btn-outline-danger';
       removeBtn.innerHTML = '<i class="bi bi-x"></i>';
-      removeBtn.onclick = function(e) {
+      removeBtn.onclick = function (e) {
         e.stopPropagation();
         toggleFileSelection(file.path, file.name, file.isFolder);
       };
@@ -353,31 +421,50 @@
     }
   }
 
-  // 전송 폼 제출 처리 (다중 파일/폴더 지원) 부분만 수정
+  // 전송 폼 제출 처리 (다중 파일/폴더 지원)
   function submitTransferForm() {
-    if (isMultiSelectMode && selectedFiles.length > 0) {
-      const serverPath = document.getElementById('selectedServerPath').value || currentServerPath;
+    const form = document.getElementById('transferForm');
+    const serverPath = document.getElementById('selectedServerPath').value || currentServerPath;
 
+    if (isMultiSelectMode && selectedFiles.length > 0) {
       // 폴더 전송 여부 확인
       const folders = selectedFiles.filter(f => f.isFolder);
+      const files = selectedFiles.filter(f => !f.isFolder);
 
-      if (folders.length > 0) {
-        if (selectedFiles.length === 1) {
-          // 단일 폴더 전송
-          window.location.href = `/transfer/folder?cloudPath=${encodeURIComponent(folders[0].path)}&serverPath=${encodeURIComponent(serverPath)}`;
-        } else {
-          alert('폴더는 한 번에 하나씩만 전송할 수 있습니다.');
-        }
-      } else {
-        // 다중 파일 전송
-        const paths = selectedFiles.map(f => f.path).join(',');
-        window.location.href = `/transfer/multiple?cloudPaths=${encodeURIComponent(paths)}&serverPath=${encodeURIComponent(serverPath)}`;
+      document.getElementById('serverPathInput').value = serverPath;
+
+      // 다중 파일 전송
+      if (files.length > 0) {
+        form.action = '/transfer/multiple/submit';
+
+        // JSON 형식으로 변환
+        const pathsArray = files.map(f => f.path);
+        console.log("전송할 파일 목록:", pathsArray); // 디버깅용
+
+        // input 값 설정
+        document.getElementById('cloudPathsInput').value = JSON.stringify(pathsArray);
+        document.getElementById('serverPathInput').value = serverPath;
+
+        // 폼 제출 전 확인
+        console.log("폼 제출 준비 완료");
+
+        // 폼 제출
+        form.submit();
+        console.log("폼 제출됨");
       }
     } else {
-      // 단일 파일 전송 - 이 부분이 변경됨
+      // 단일 파일 전송
       const cloudPath = document.getElementById('selectedCloudPath').value;
-      const serverPath = document.getElementById('selectedServerPath').value || currentServerPath;
-      window.location.href = `/transfer/single?cloudPath=${encodeURIComponent(cloudPath)}&serverPath=${encodeURIComponent(serverPath)}`;
+
+      if (!cloudPath) {
+        alert('전송할 파일을 선택해주세요.');
+        return;
+      }
+
+      form.action = '/transfer/single/submit';
+      document.getElementById('cloudPathInput').value = cloudPath;
+      document.getElementById('serverPathInput').value = serverPath;
+      form.submit();
     }
   }
 </script>
