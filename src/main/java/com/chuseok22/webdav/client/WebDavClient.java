@@ -6,6 +6,7 @@ import com.chuseok22.webdav.dto.response.WebDavFileDTO;
 import com.chuseok22.webdav.global.exception.CustomException;
 import com.chuseok22.webdav.global.exception.ErrorCode;
 import com.chuseok22.webdav.global.util.FileUtil;
+import com.chuseok22.webdav.vo.TransferResult;
 import com.github.sardine.DavResource;
 import com.github.sardine.Sardine;
 import com.github.sardine.SardineFactory;
@@ -63,7 +64,8 @@ public class WebDavClient {
    */
   public boolean transferFile(String filePath, String targetDir, boolean overwrite) {
     try {
-      return processFileTransfer(filePath, targetDir, overwrite);
+      TransferResult transferResult = processFileTransfer(filePath, targetDir, overwrite);
+      return transferResult.equals(TransferResult.SUCCESS) || transferResult.equals(TransferResult.DUPLICATE);
     } catch (IOException e) {
       log.error("파일 전송 실패 [{} -> {}]", filePath, targetDir, e);
       throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
@@ -81,14 +83,17 @@ public class WebDavClient {
   public TransferResultDTO transferMultipleFiles(List<String> filePaths, String targetDir, boolean overwrite) {
     int totalFiles = filePaths.size();
     int successCount = 0;
+    List<String> duplicatedFiles = new ArrayList<>();
     List<String> failedFiles = new ArrayList<>();
 
     for (String filePath : filePaths) {
       try {
-        boolean isSucceed = processFileTransfer(filePath, targetDir, overwrite);
-        if (isSucceed) {
+        TransferResult transferResult = processFileTransfer(filePath, targetDir, overwrite);
+        if (transferResult.equals(TransferResult.SUCCESS)) {
           successCount++;
           log.info("파일 전송 성공: {}/{}, 건너뛴 파일: {}", successCount, totalFiles, failedFiles.size());
+        } else if (transferResult.equals(TransferResult.DUPLICATE)) {
+          duplicatedFiles.add(filePath);
         } else {
           failedFiles.add(filePath);
         }
@@ -98,7 +103,9 @@ public class WebDavClient {
         failedFiles.add(filePath);
       }
     }
-    log.error("실패 or 건너뛴 파일: {}개, [{}]", failedFiles.size(), failedFiles);
+    log.info("성공한 파일: {}", successCount);
+    log.warn("중복된 파일: {}, [{}]", duplicatedFiles.size(), duplicatedFiles);
+    log.error("실패한 파일: {}, [{}]", failedFiles.size(), failedFiles);
     return TransferResultDTO.builder()
         .successCount(successCount)
         .totalCount(totalFiles)
@@ -134,8 +141,8 @@ public class WebDavClient {
         log.info("하위 폴더를 생성합니다: {}", dto.getRelativePath());
         createFolderIfNotExists(dto.getFullPath(), FileUtil.combineBaseAndPath(targetDir, dto.getRelativePath()));
       } else {
-        boolean isSucceed = processFileTransfer(dto.getFullPath(), FileUtil.combineBaseAndPath(targetDir, dto.getRelativePath()), overwrite);
-        if (isSucceed) {
+        TransferResult transferResult = processFileTransfer(dto.getFullPath(), FileUtil.combineBaseAndPath(targetDir, dto.getRelativePath()), overwrite);
+        if (transferResult.equals(TransferResult.SUCCESS)) {
           successCount++;
           log.info("파일 전송 성공: {}/{}, 건너뛴 파일: {}", successCount, totalFiles, failedFiles.size());
         } else {
@@ -157,7 +164,7 @@ public class WebDavClient {
    * @param targetDir 대상 디렉토리 (ex. /home/folder)
    * @param overwrite 덮어쓰기 여부
    */
-  public boolean processFileTransfer(String filePath, String targetDir, boolean overwrite) throws IOException {
+  public TransferResult processFileTransfer(String filePath, String targetDir, boolean overwrite) throws IOException {
     Sardine cloudClient = createClient(cloudUsername, cloudPassword);
     Sardine nasClient = createClient(nasUsername, nasPassword);
 
@@ -170,14 +177,14 @@ public class WebDavClient {
 
     if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
       log.warn("파일: {} 이 이미 존재합니다 (overwrite = false) 건너뜁니다", fileName);
-      return false;
+      return TransferResult.DUPLICATE;
     }
     log.info("전송 시작: {} -> {}", filePath, targetDir);
     try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
       nasClient.put(nasFilePathEncodedUrl, inputStream);
     }
     log.info("파일 전송 성공: {}", nasFilePath);
-    return true;
+    return TransferResult.SUCCESS;
   }
 
   /**
