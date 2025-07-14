@@ -6,6 +6,7 @@ import com.chuseok22.webdav.dto.request.MultipleFileTransferDTO;
 import com.chuseok22.webdav.dto.request.SingleFileTransferDTO;
 import com.chuseok22.webdav.dto.response.TransferResultDTO;
 import com.chuseok22.webdav.dto.response.WebDavFileDTO;
+import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,7 +48,7 @@ public class FileTransferService {
   /**
    * 폴더 전송
    */
-  public TransferResultDTO transferFolder(FolderTransferDTO request) {
+  public TransferResultDTO transferFolder(FolderTransferDTO request) throws IOException {
     return webDavClient.transferFolder(request.getFolderPath(), request.getServerPath(), request.isOverwrite());
   }
 }

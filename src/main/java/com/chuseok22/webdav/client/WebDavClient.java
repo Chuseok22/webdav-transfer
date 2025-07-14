@@ -62,7 +62,12 @@ public class WebDavClient {
    * @param overwrite 덮어쓰기 여부
    */
   public boolean transferFile(String filePath, String targetDir, boolean overwrite) {
-    return processFileTransfer(filePath, targetDir, overwrite);
+    try {
+      return processFileTransfer(filePath, targetDir, overwrite);
+    } catch (IOException e) {
+      log.error("파일 전송 실패 [{} -> {}]", filePath, targetDir, e);
+      throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
+    }
   }
 
   /**
@@ -88,7 +93,7 @@ public class WebDavClient {
           failedFiles.add(filePath);
         }
       } catch (Exception e) {
-        log.error("다중 파일 전송 중 오류 발생", e);
+        log.error("다중 파일 전송 중 오류 발생 [{} → {}]", filePath, targetDir, e);
         log.error("파일을 건너뜁니다: {}", filePath);
         failedFiles.add(filePath);
       }
@@ -109,7 +114,7 @@ public class WebDavClient {
    * @param overwrite  덮어쓰기 여부
    * @return 전송 결과 객체
    */
-  public TransferResultDTO transferFolder(String folderPath, String targetDir, boolean overwrite) {
+  public TransferResultDTO transferFolder(String folderPath, String targetDir, boolean overwrite) throws IOException {
     Sardine cloudClient = createClient(cloudUsername, cloudPassword);
 
     List<String> failedFiles = new ArrayList<>();
@@ -152,7 +157,7 @@ public class WebDavClient {
    * @param targetDir 대상 디렉토리 (ex. /home/folder)
    * @param overwrite 덮어쓰기 여부
    */
-  public boolean processFileTransfer(String filePath, String targetDir, boolean overwrite) {
+  public boolean processFileTransfer(String filePath, String targetDir, boolean overwrite) throws IOException {
     Sardine cloudClient = createClient(cloudUsername, cloudPassword);
     Sardine nasClient = createClient(nasUsername, nasPassword);
 
@@ -163,24 +168,16 @@ public class WebDavClient {
     String cloudFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(cloudUrl, filePath);
     String nasFilePathEncodedUrl = FileUtil.buildNormalizedAndEncodedUrl(nasUrl, nasFilePath);
 
-    try {
-      if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
-        log.warn("파일: {} 이 이미 존재합니다 (overwrite = false) 건너뜁니다", fileName);
-        return false;
-      }
-      log.info("전송 시작: {} -> {}", filePath, targetDir);
-      try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
-        nasClient.put(nasFilePathEncodedUrl, inputStream);
-      }
-      log.info("파일 전송 성공: {}", nasFilePath);
-      return true;
-    } catch (IOException e) {
-      log.error("전송 실패 [{} → {}]", filePath, nasFilePath, e);
-      throw new CustomException(ErrorCode.FILE_TRANSFER_ERROR);
-    } finally {
-      shutdownClient(cloudClient);
-      shutdownClient(nasClient);
+    if (nasClient.exists(nasFilePathEncodedUrl) && !overwrite) {
+      log.warn("파일: {} 이 이미 존재합니다 (overwrite = false) 건너뜁니다", fileName);
+      return false;
     }
+    log.info("전송 시작: {} -> {}", filePath, targetDir);
+    try (InputStream inputStream = cloudClient.get(cloudFilePathEncodedUrl)) {
+      nasClient.put(nasFilePathEncodedUrl, inputStream);
+    }
+    log.info("파일 전송 성공: {}", nasFilePath);
+    return true;
   }
 
   /**
